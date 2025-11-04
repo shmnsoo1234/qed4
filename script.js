@@ -1,173 +1,97 @@
-// 설정
-const NUMBER_OF_ATTEMPTS = 30; // 최대 시도 횟수
-const DIGITS = 5; // 다섯 자리 숫자
+// 숫자 워들 (중복 없음, 숫자 1~5, 길이 5, 최대 6번 시도)
 
-let attemptsLeft = NUMBER_OF_ATTEMPTS;
-let currentAttempt = 0;
-let gameOver = false;
+/* ---------- 유틸 함수들 ---------- */
 
-// 1. 정답 숫자 생성 (1~5로 이루어진 5자리 숫자)
-function generateRandomAnswer() {
-    let result = '';
-    for (let i = 0; i < DIGITS; i++) {
-        // 1에서 5 사이의 랜덤 정수를 생성합니다.
-        result += Math.floor(Math.random() * 5) + 1;
-    }
-    return result;
+// 랜덤 비밀 숫자 생성 (예: [3,1,5,2,4])
+function generateSecret() {
+  const pool = [1, 2, 3, 4, 5];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool;
 }
 
-const ANSWER = generateRandomAnswer();
-console.log("정답 (개발자용):", ANSWER); 
-
-// DOM 요소 가져오기
-const gameBoard = document.getElementById('game-board');
-const digitInputs = document.querySelectorAll('.guess-digit-input'); // 5개의 입력 필드
-const submitButton = document.getElementById('submit-button');
-const messageArea = document.getElementById('message-area');
-
-// 게임 보드 초기화
-function initializeBoard() {
-    for (let i = 0; i < NUMBER_OF_ATTEMPTS; i++) {
-        const row = document.createElement('div');
-        row.classList.add('row');
-
-        for (let j = 0; j < DIGITS; j++) {
-            const tile = document.createElement('div');
-            tile.classList.add('tile');
-            row.appendChild(tile);
-        }
-        gameBoard.appendChild(row);
-    }
+// 입력 문자열 → 숫자 배열 변환
+function normalizeGuess(guess) {
+  if (typeof guess === 'string') {
+    return guess.split('').map(Number);
+  } else if (Array.isArray(guess)) {
+    return guess.map(Number);
+  } else {
+    throw new Error('guess는 문자열("12345") 또는 배열([1,2,3,4,5]) 이어야 합니다.');
+  }
 }
 
-// 2. 핵심 로직: 위치가 맞는 숫자 개수만 계산
-function checkGuess(guess, answer) {
-    let exactMatches = 0;
+// 입력 검증
+function validateGuess(guess) {
+  const arr = normalizeGuess(guess);
+  if (arr.length !== 5) return { ok: false, reason: '길이는 5여야 합니다.' };
 
-    for (let i = 0; i < DIGITS; i++) {
-        if (guess[i] === answer[i]) {
-            exactMatches++;
-        }
+  for (const n of arr) {
+    if (!Number.isInteger(n) || n < 1 || n > 5) {
+      return { ok: false, reason: '각 자리는 1~5 사이 숫자여야 합니다.' };
     }
-    return exactMatches;
+  }
+
+  const set = new Set(arr);
+  if (set.size !== 5) return { ok: false, reason: '숫자는 중복되면 안 됩니다.' };
+
+  return { ok: true, arr };
 }
 
-// 보드에 추측 숫자를 표시
-function displayGuess(guess, exactMatches) {
-    const currentRow = gameBoard.children[currentAttempt];
-
-    // 1. 타일에 입력된 숫자를 표시하고 스타일 적용
-    for (let i = 0; i < DIGITS; i++) {
-        const tile = currentRow.children[i];
-        tile.textContent = guess[i];
-        tile.classList.add('filled-tile');
-    }
-    
-    // 2. 메시지 영역에 피드백 개수 표시
-    const feedbackMessage = `✅ 맞는 위치의 숫자 개수: ${exactMatches}개`;
-    messageArea.textContent = feedbackMessage; 
+// 맞은 숫자 개수 계산 (위치 무관)
+function evaluateGuess(secret, guessArr) {
+  const sSet = new Set(secret);
+  let match = 0;
+  for (const n of guessArr) {
+    if (sSet.has(n)) match++;
+  }
+  return match;
 }
 
-// 입력 필드 포커스 및 유효성 처리
-function setupInputHandling() {
-    digitInputs.forEach((input, index) => {
-        // 1. 입력 시 다음 칸으로 자동 포커스 이동
-        input.addEventListener('input', () => {
-            if (input.value.length === 1 && index < DIGITS - 1) {
-                digitInputs[index + 1].focus();
-            }
-        });
+/* ---------- 게임 본체 ---------- */
 
-        // 2. 백스페이스(Backspace) 시 이전 칸으로 이동
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Backspace' && input.value.length === 0 && index > 0) {
-                digitInputs[index - 1].focus();
-            }
-        });
-        
-        // 3. 1~5 숫자만 허용하도록 유효성 검사 (입력과 동시에 처리)
-        input.addEventListener('change', () => {
-             let val = parseInt(input.value);
-             // 입력 값이 1~5 범위를 벗어나면 비움
-             if (isNaN(val) || val < 1 || val > 5) {
-                 input.value = ''; 
-             }
-        });
-    });
-}
+function playNumberWordle() {
+  const secret = generateSecret();
+  console.log(' 숫자 워들 게임을 시작합니다! (1~5, 중복 없음, 5자리)');
+  console.log('최대 6번 시도할 수 있습니다.');
+  // 개발용: 실제 정답 보기 (테스트용)
+  console.log('(정답 디버그용):', secret.join(''));
 
-// 게임 상태 업데이트 (승리 시 시도 횟수 표시 로직 포함)
-function updateGameStatus(guess, exactMatches) {
-    
-    // 1. 보드에 추측 숫자 표시 및 개수 메시지 출력
-    displayGuess(guess, exactMatches); 
-    
-    if (exactMatches === DIGITS) {
-        // 🌟 정답을 맞춤: 시도 횟수 표시 🌟
-        const attemptsUsed = currentAttempt + 1;
-        messageArea.textContent = `🎉 축하합니다! 정답입니다! ${attemptsUsed}번 만에 맞췄어요!`;
-        gameOver = true;
-    } else if (attemptsLeft - 1 === 0) {
-        // 모든 시도 횟수를 소진
-        messageArea.textContent = `😭 실패! 정답은 ${ANSWER} 였습니다.`;
-        gameOver = true;
+  let attempts = 0;
+  const maxAttempts = 6;
+
+  while (attempts < maxAttempts) {
+    const input = prompt(`(${attempts + 1}/${maxAttempts}) 5자리 숫자 입력 (1~5, 중복없음):`);
+    if (input === null) {
+      console.log('게임이 취소되었습니다.');
+      return;
     }
 
-    if (gameOver) {
-        // 입력 필드 전체 비활성화
-        digitInputs.forEach(input => input.disabled = true);
-        submitButton.disabled = true;
+    const validation = validateGuess(input);
+    if (!validation.ok) {
+      console.log('잘못된 입력:', validation.reason);
+      continue;
+    }
+
+    attempts++;
+    const guessArr = validation.arr;
+    const matched = evaluateGuess(secret, guessArr);
+
+    if (matched === 5) {
+      console.log(` 정답! ${attempts}번 만에 맞췄습니다!`);
+      return;
     } else {
-        attemptsLeft--;
-        currentAttempt++;
-        
-        // 다음 시도를 위해 입력 필드 초기화 및 첫 번째 칸으로 포커스 이동
-        digitInputs.forEach(input => input.value = '');
-        digitInputs[0].focus(); 
+      console.log(` ${matched}개 숫자가 정답에 포함되어 있습니다. (${maxAttempts - attempts}번 남음)`);
     }
+  }
+
+  console.log(` 실패 (정답: ${secret.join('')}`);
 }
 
-// '확인' 버튼 클릭 이벤트 핸들러 (입력 미완료 시 처리 로직 추가)
-submitButton.addEventListener('click', () => {
-    if (gameOver) return;
+// 브라우저 콘솔에서 실행할 때:
+playNumberWordle();
 
-    // 5개의 입력 필드에서 값을 합쳐서 guess 문자열 생성
-    let guess = '';
-    let incompleteIndex = -1; // 채워지지 않은 칸의 인덱스
-
-    for (let i = 0; i < DIGITS; i++) {
-        const inputVal = digitInputs[i].value;
-        if (inputVal === '' || !/^[1-5]$/.test(inputVal)) {
-            incompleteIndex = i; // 채워지지 않은 첫 번째 칸을 찾음
-            break;
-        }
-        guess += inputVal;
-    }
-
-    if (incompleteIndex !== -1) {
-        // 🚨 5칸 중 하나라도 채워지지 않았다면
-        messageArea.textContent = '❌ 5개의 칸을 1~5 사이의 숫자로 모두 채워야 합니다.';
-        digitInputs[incompleteIndex].focus(); // 채워지지 않은 칸으로 포커스 이동
-        return; 
-    }
-
-    // 모든 칸이 채워졌다면 게임 로직 실행
-    // 메시지 초기화 (성공적으로 입력됐으므로)
-    messageArea.textContent = ''; 
-    const exactMatches = checkGuess(guess, ANSWER);
-    updateGameStatus(guess, exactMatches);
-});
-
-
-// 엔터 키 입력 처리
-document.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter' && !gameOver) {
-        // 엔터 시 바로 submitButton 클릭 이벤트 발생
-        submitButton.click();
-    }
-});
-
-
-// 게임 시작
-initializeBoard();
-setupInputHandling(); // 입력 칸 핸들링 설정 시작
+// Node.js에서 실행할 때는 아래 주석을 참고하세요.
+// (Node 환경에서는 prompt가 없으므로 readline 인터페이스로 대체 가능)
